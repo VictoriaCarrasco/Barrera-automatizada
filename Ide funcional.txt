@@ -1,0 +1,141 @@
+#include <WiFiS3.h>
+#include <WiFiUdp.h>
+#include <Servo.h>
+
+// ---------------------- WIFI ----------------------
+char ssid[] = "Linksys03911";
+char pass[] = "pak0pfd1im";
+
+WiFiUDP udp;
+IPAddress broadcastIP;
+
+// ---------------------- SERVO ----------------------
+const int pinIR = 8;
+const int pinServo = 9;
+
+Servo puerta;
+
+const int tiempoAbierta = 4000;
+bool detectando = false;
+
+// ---------------------- ESTADOS ----------------------
+int obstacleState = 0;
+String barrierState = "CERRADA";
+String fecha = "2025-11-20 18:00:00";
+
+// ---------------------- PUERTOS ----------------------
+const int puertoEscucha = 4211;  // Android → Arduino
+const int puertoEnvio = 4210;    // Arduino → Android
+
+// ---------------------- FUNCIONES SERVO ----------------------
+void subirBarrera() {
+  puerta.write(70);   // subir
+  delay(300);
+  puerta.write(90);   // stop
+  barrierState = "ABIERTA";
+}
+
+void bajarBarrera() {
+  puerta.write(110);  // bajar
+  delay(300);
+  puerta.write(90);   // stop
+  barrierState = "CERRADA";
+}
+
+// ---------------------- ENVIAR UDP ----------------------
+void enviarUDPEstado() {
+  String mensaje =
+    "OBSTACLE=" + String(obstacleState) +
+    ";BARRIER=" + barrierState +
+    ";DATE=" + fecha;
+
+  udp.beginPacket(broadcastIP, puertoEnvio);
+  udp.print(mensaje);
+  udp.endPacket();
+
+  Serial.println("UDP enviado: " + mensaje);
+}
+
+// ---------------------- SETUP ----------------------
+void setup() {
+  Serial.begin(9600);
+  delay(1000);
+
+  puerta.attach(pinServo);
+  puerta.write(90);
+  pinMode(pinIR, INPUT);
+
+  Serial.println("Conectando al WiFi...");
+  WiFi.begin(ssid, pass);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(1000);
+  }
+
+  Serial.println("\nWiFi conectado.");
+  Serial.print("IP: ");
+  Serial.println(WiFi.localIP());
+
+  broadcastIP = IPAddress(
+    WiFi.localIP()[0],
+    WiFi.localIP()[1],
+    WiFi.localIP()[2],
+    255
+  );
+
+  udp.begin(puertoEscucha);
+  Serial.println("UDP listo.");
+}
+
+// ---------------------- LOOP ----------------------
+void loop() {
+
+  // -------- LECTURA SENSOR --------
+  bool detecta = (digitalRead(pinIR) == LOW);
+
+  if (detecta && !detectando) {
+    obstacleState = 1;
+
+    subirBarrera();
+    delay(tiempoAbierta);
+    bajarBarrera();
+
+    detectando = true;
+  }
+
+  if (!detecta && detectando) {
+    obstacleState = 0;
+    detectando = false;
+  }
+
+  // -------- COMANDOS DESDE ANDROID --------
+  int packetSize = udp.parsePacket();
+  if (packetSize > 0) {
+
+    char buffer[50];
+    int len = udp.read(buffer, sizeof(buffer) - 1);
+    if (len > 0) buffer[len] = '\0';
+
+    String cmd = String(buffer);  // ✔ correcto
+    cmd.trim();                   // ✔ corregido
+
+    Serial.println("CMD recibido: " + cmd);
+
+    if (cmd == "UP") {
+      subirBarrera();
+    }
+    if (cmd == "DOWN") {
+      bajarBarrera();
+    }
+  }
+
+  // -------- ENVÍO ESTADO --------
+  static unsigned long lastSend = 0;
+  if (millis() - lastSend >= 1000) {
+    lastSend = millis();
+    enviarUDPEstado();
+  }
+
+  delay(30);
+}
