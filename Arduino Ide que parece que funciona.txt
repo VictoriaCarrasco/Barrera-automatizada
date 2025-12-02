@@ -1,0 +1,70 @@
+
+#include <WiFiS3.h>
+#include <WiFiUdp.h>
+
+// Credenciales Wi-Fi
+char ssid[] = "Linksys03911";
+char pass[] = "pak0pfd1im";
+
+// Definir el puerto UDP
+WiFiUDP udp;
+IPAddress broadcastIP;
+
+void setup() {
+  Serial.begin(9600);  // Mantén el mismo baud rate para el Serial Monitor (9600 o 115200)
+  delay(1000);  // Espera un segundo para asegurar que el Serial Monitor esté listo
+
+  Serial.println("Conectando al WiFi...");
+
+  // Intentar conectar al Wi-Fi
+  int status = WiFi.begin(ssid, pass);
+
+  while (status != WL_CONNECTED) {
+    Serial.print(".");
+    delay(1000);
+    status = WiFi.status();
+  }
+
+  Serial.println("\n------------------------------");
+  Serial.println(" WiFi conectado exitosamente ");
+  Serial.println("------------------------------");
+
+  Serial.print("SSID: ");
+  Serial.println(WiFi.SSID());
+
+  Serial.print("Intensidad de señal (RSSI): ");
+  Serial.println(WiFi.RSSI());
+
+  // Obtener y mostrar la IP
+  IPAddress ip = WiFi.localIP();
+  Serial.print("Dirección IP: ");
+  Serial.println(ip);
+
+  Serial.println("------------------------------");
+
+  // Establecer la dirección de broadcast (para enviar a todos los dispositivos en la red)
+  broadcastIP = IPAddress(ip[0], ip[1], ip[2], 255);
+
+  // Iniciar UDP para enviar datos
+  udp.begin(4210);  // Puerto para recibir datos si es necesario
+  Serial.println("UDP listo.");
+}
+
+void loop() {
+  static unsigned long lastTime = 0;
+  unsigned long currentMillis = millis();
+
+  if (currentMillis - lastTime >= 1000) {  // Enviar cada 1 segundo
+    lastTime = currentMillis;
+
+    // Mensaje de ejemplo a enviar al Android
+    String mensaje = "OBSTACLE=0;BARRIER=ABIERTA;DATE=2025-11-20 18:00:00";  // Modifica según sea necesario
+
+    // Enviar el mensaje UDP al Android (al puerto 4210)
+    udp.beginPacket(broadcastIP, 4210);
+    udp.print(mensaje);
+    udp.endPacket();
+
+    Serial.println("Mensaje enviado: " + mensaje);  // Imprime el mensaje enviado
+  }
+}
